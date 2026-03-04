@@ -139,8 +139,9 @@
         <option value="iclr_2025_top25.json">ICLR 2025</option>
         <option value="iclr_2026_top25.json">ICLR 2026</option>
       </select>
-      <input id="instituteFilter" type="text" placeholder="Filter primary institute (keyword, e.g. mit, stanford, cmu)" />
-      <input id="titleFilter" type="text" placeholder="Filter paper title (keyword)" style="margin-top: 8px;" />
+      <input id="instituteFilter" type="text" placeholder="Filter primary institute (regex, e.g. mit|stanford|cmu)" />
+      <input id="titleFilter" type="text" placeholder="Filter paper title (regex)" style="margin-top: 8px;" />
+      <input id="authorFilter" type="text" placeholder="Filter authors (regex)" style="margin-top: 8px;" />
       <div id="meta" class="meta">Loading data...</div>
     </div>
 
@@ -162,12 +163,25 @@
     const elConference = document.getElementById("conferenceSelect");
     const elFilter = document.getElementById("instituteFilter");
     const elTitleFilter = document.getElementById("titleFilter");
+    const elAuthorFilter = document.getElementById("authorFilter");
     const elEmpty = document.getElementById("empty");
     const elLoading = document.getElementById("loading");
     const sentinel = document.getElementById("sentinel");
 
     function normalize(value) {
       return (value || "").toString().trim().toLowerCase();
+    }
+
+    function buildMatcher(value) {
+      const raw = (value || "").trim();
+      if (!raw) return () => true;
+      try {
+        const re = new RegExp(raw, "i");
+        return (str) => re.test(str || "");
+      } catch (_) {
+        const lower = raw.toLowerCase();
+        return (str) => normalize(str).includes(lower);
+      }
     }
 
     function paperCard(paper) {
@@ -218,12 +232,14 @@
     }
 
     function applyFilter() {
-      const instituteKeyword = normalize(elFilter.value);
-      const titleKeyword = normalize(elTitleFilter.value);
+      const matchInstitute = buildMatcher(elFilter.value);
+      const matchTitle = buildMatcher(elTitleFilter.value);
+      const matchAuthor = buildMatcher(elAuthorFilter.value);
       filtered = allPapers.filter((paper) => {
-        const instituteMatch = normalize(paper.primary_institute).includes(instituteKeyword);
-        const titleMatch = normalize(paper.title).includes(titleKeyword);
-        return instituteMatch && titleMatch;
+        const instituteMatch = matchInstitute(paper.primary_institute);
+        const titleMatch = matchTitle(paper.title);
+        const authorMatch = matchAuthor(paper._authorsStr);
+        return instituteMatch && titleMatch && authorMatch;
       });
       elList.innerHTML = "";
       visibleCount = 0;
@@ -238,11 +254,15 @@
       if (!response.ok) throw new Error(`Failed to fetch data: ${response.status}`);
       allPapers = await response.json();
       allPapers.sort((a, b) => (b.avg_score || 0) - (a.avg_score || 0));
+      for (const paper of allPapers) {
+        paper._authorsStr = (paper.authors || []).join(", ");
+      }
       applyFilter();
     }
 
     elFilter.addEventListener("input", applyFilter);
     elTitleFilter.addEventListener("input", applyFilter);
+    elAuthorFilter.addEventListener("input", applyFilter);
     elConference.addEventListener("change", () => {
       elList.innerHTML = "";
       elEmpty.hidden = true;
